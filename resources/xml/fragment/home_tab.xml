@@ -2,13 +2,13 @@
         marginLeft="8">
     <AutoTabFrame
             id="home/tab/frame"
-            defaultTab="1"
+            defaultTab="0"
             tabHeight="70"
             tabItemActiveTextColor="@theme/color/bilibili"
             disableNavigationRight="true"
             sidebarPosition="top">
 
-        <Tab label="@i18n/wiliwili/home/live/tab"
+        <Tab label="latest/header"
              fontSize="22">
             <HomeLive/>
         </Tab>
