@@ -8,7 +8,7 @@
             disableNavigationRight="true"
             sidebarPosition="top">
 
-        <Tab label="latest/header"
+        <Tab label="@i18n/wiliwili/home/live/tab"
              fontSize="22">
             <HomeLive/>
         </Tab>
