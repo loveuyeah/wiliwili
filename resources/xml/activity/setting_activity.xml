@@ -10,7 +10,7 @@
                 grow="1"
                 tabBackgroundColor="@theme/color/grey_1"
                 tabItemActiveTextColor="@theme/color/bilibili"
-                defaultTab="0"
+                defaultTab="1"
                 demandMode="false"
                 sidebarWidth="200"
                 sidebarPosition="left">
