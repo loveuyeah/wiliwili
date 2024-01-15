@@ -4,8 +4,8 @@
         headerHidden="true"
         footerHidden="false">
     <brls:Box
-            width="auto"
-            height="auto"
+            width="1850"
+            height="1048"
             grow="1.0"
             axis="row">
 
