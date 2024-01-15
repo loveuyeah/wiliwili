@@ -12,7 +12,7 @@
                 tabBackgroundColor="@theme/color/grey_1"
                 tabItemActiveTextColor="@theme/color/bilibili"
                 disableNavigationDown="true"
-                defaultTab="0"
+                defaultTab="1"
                 sidebarPosition="left">
 
             <Tab label=""
