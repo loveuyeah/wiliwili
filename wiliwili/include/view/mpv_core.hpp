@@ -17,6 +17,8 @@
 #if defined(MPV_SW_RENDER)
 #elif defined(BOREALIS_USE_DEKO3D)
 #include <mpv/render_dk3d.h>
+#elif defined(BOREALIS_USE_D3D11)
+#include <mpv/render_dxgi.h>
 #elif defined(BOREALIS_USE_OPENGL)
 #include <mpv/render_gl.h>
 #if defined(__PSV__) || defined(PS4)
@@ -38,7 +40,7 @@
 // 将视频绘制到独立的 framebuffer
 #define MPV_USE_FB
 #if !defined(USE_GLES2) && !defined(USE_GLES3)
-// 虽然 gles3 理论时也支持 vao 但是部分平台上实际不支持（比如 ANGLE）
+// 虽然 gles3 理论上也支持 vao 但是部分平台上实际不支持（比如 ANGLE）
 #define MPV_USE_VAO
 #endif
 struct GLShader {
@@ -78,6 +80,7 @@ typedef int (*mpvRenderContextRenderFunc)(mpv_render_context *ctx, mpv_render_pa
 typedef void (*mpvRenderContextReportSwapFunc)(mpv_render_context *ctx);
 typedef uint64_t (*mpvRenderContextUpdateFunc)(mpv_render_context *ctx);
 typedef void (*mpvRenderContextFreeFunc)(mpv_render_context *ctx);
+typedef unsigned long (*mpvClientApiVersionFunc)();
 
 extern mpvSetOptionStringFunc mpvSetOptionString;
 extern mpvObservePropertyFunc mpvObserveProperty;
@@ -100,6 +103,7 @@ extern mpvRenderContextRenderFunc mpvRenderContextRender;
 extern mpvRenderContextReportSwapFunc mpvRenderContextReportSwap;
 extern mpvRenderContextUpdateFunc mpvRenderContextUpdate;
 extern mpvRenderContextFreeFunc mpvRenderContextFree;
+extern mpvClientApiVersionFunc mpvClientApiVersion;
 #else
 #define mpvSetOptionString mpv_set_option_string
 #define mpvObserveProperty mpv_observe_property
@@ -122,6 +126,7 @@ extern mpvRenderContextFreeFunc mpvRenderContextFree;
 #define mpvRenderContextReportSwap mpv_render_context_report_swap
 #define mpvRenderContextUpdate mpv_render_context_update
 #define mpvRenderContextFree mpv_render_context_free
+#define mpvClientApiVersion mpv_client_api_version
 #endif
 
 class MPVCore : public brls::Singleton<MPVCore> {
@@ -343,7 +348,17 @@ public:
 
     // 硬件解码
     inline static bool HARDWARE_DEC               = false;
+
+    // 硬解方式
+#ifdef __SWITCH__
+    inline static std::string PLAYER_HWDEC_METHOD = "auto";
+#elif defined(__PSV__)
+    inline static std::string PLAYER_HWDEC_METHOD = "vita-copy";
+#elif defined(PS4)
+    inline static std::string PLAYER_HWDEC_METHOD = "no";
+#else
     inline static std::string PLAYER_HWDEC_METHOD = "auto-safe";
+#endif
 
     // 此变量为真时，加载结束后自动播放视频
     inline static bool AUTO_PLAY = true;
@@ -394,6 +409,10 @@ private:
     };
     mpv_render_param mpv_params[3] = {
         {MPV_RENDER_PARAM_DEKO3D_FBO, &mpv_fbo},
+        {MPV_RENDER_PARAM_INVALID, nullptr},
+    };
+#elif defined(BOREALIS_USE_D3D11)
+    mpv_render_param mpv_params[1] = {
         {MPV_RENDER_PARAM_INVALID, nullptr},
     };
 #elif defined(MPV_NO_FB)

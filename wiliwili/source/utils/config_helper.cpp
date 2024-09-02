@@ -11,12 +11,15 @@
 
 #include <borealis/core/application.hpp>
 #include <borealis/core/cache_helper.hpp>
+#include <borealis/core/touch/pan_gesture.hpp>
+#include <cpr/filesystem.h>
 
 #include "bilibili.h"
 #include "utils/number_helper.hpp"
 #include "utils/thread_helper.hpp"
 #include "utils/image_helper.hpp"
 #include "utils/config_helper.hpp"
+#include "utils/crash_helper.hpp"
 #include "utils/vibration_helper.hpp"
 #include "utils/ban_list.hpp"
 #include "utils/string_helper.hpp"
@@ -38,6 +41,10 @@ extern int ps4_mpv_dump_shaders;
 extern in_addr_t primary_dns;
 extern in_addr_t secondary_dns;
 }
+#endif
+
+#ifdef _WIN32
+#include <winsock2.h>
 #endif
 
 #ifndef PATH_MAX
@@ -84,7 +91,7 @@ std::unordered_map<SettingItem, ProgramOption> ProgramConfig::SETTING_MAP = {
     {SettingItem::HOME_WINDOW_STATE, {"home_window_state", {}, {}, 0}},
     {SettingItem::DLNA_IP, {"dlna_ip", {}, {}, 0}},
     {SettingItem::DLNA_NAME, {"dlna_name", {}, {}, 0}},
-    {SettingItem::PLAYER_ASPECT, {"player_aspect", {"-1", "4:3", "16:9"}, {}, 0}},
+    {SettingItem::PLAYER_ASPECT, {"player_aspect", {"-1", "-2", "-3", "4:3", "16:9"}, {}, 0}},
     {SettingItem::HTTP_PROXY, {"http_proxy", {}, {}, 0}},
     {SettingItem::DANMAKU_STYLE_FONT, {"danmaku_style_font", {"stroke", "incline", "shadow", "pure"}, {}, 0}},
 
@@ -120,6 +127,7 @@ std::unordered_map<SettingItem, ProgramOption> ProgramConfig::SETTING_MAP = {
 #endif
     {SettingItem::PLAYER_HWDEC_CUSTOM, {"player_hwdec_custom", {}, {}, 0}},
     {SettingItem::PLAYER_EXIT_FULLSCREEN_ON_END, {"player_exit_fullscreen_on_end", {}, {}, 1}},
+    {SettingItem::PLAYER_OSD_TV_MODE, {"player_osd_tv_mode", {}, {}, 0}},
     {SettingItem::OPENCC_ON, {"opencc", {}, {}, 1}},
     {SettingItem::DANMAKU_ON, {"danmaku", {}, {}, 1}},
     {SettingItem::DANMAKU_FILTER_BOTTOM, {"danmaku_filter_bottom", {}, {}, 1}},
@@ -142,20 +150,20 @@ std::unordered_map<SettingItem, ProgramOption> ProgramConfig::SETTING_MAP = {
 
 /// number
 #if defined(__PSV__)
-    {SettingItem::PLAYER_INMEMORY_CACHE, {"player_inmemory_cache", {"0MB", "5MB", "10MB"}, {0, 5, 10}, 0}},
+    {SettingItem::PLAYER_INMEMORY_CACHE, {"player_inmemory_cache", {"0MB", "1MB", "5MB", "10MB"}, {0, 1, 5, 10}, 0}},
+#elif defined(__SWITCH__)
+    {SettingItem::PLAYER_INMEMORY_CACHE,
+     {"player_inmemory_cache", {"0MB", "10MB", "20MB", "50MB", "100MB"}, {0, 10, 20, 50, 100}, 0}},
 #else
     {SettingItem::PLAYER_INMEMORY_CACHE,
-     {"player_inmemory_cache",
-      {"0MB", "10MB", "20MB", "50MB", "100MB", "200MB", "500MB"},
-      {0, 10, 20, 50, 100, 200, 500},
-      1}},
+     {"player_inmemory_cache", {"0MB", "10MB", "20MB", "50MB", "100MB"}, {0, 10, 20, 50, 100}, 1}},
 #endif
     {
         SettingItem::PLAYER_DEFAULT_SPEED,
         {"player_default_speed",
-         {"2.0x", "1.75x", "1.5x", "1.25x", "1.0x", "0.75x", "0.5x"},
-         {200, 175, 150, 125, 100, 75, 50},
-         0},
+         {"4.0x", "3.0x", "2.0x", "1.75x", "1.5x", "1.25x", "1.0x", "0.75x", "0.5x", "0.25x"},
+         {400, 300, 200, 175, 150, 125, 100, 75, 50, 25},
+         2},
     },
     {SettingItem::PLAYER_VOLUME, {"player_volume", {}, {}, 0}},
     {SettingItem::TEXTURE_CACHE_NUM, {"texture_cache_num", {}, {}, 0}},
@@ -187,9 +195,9 @@ std::unordered_map<SettingItem, ProgramOption> ProgramConfig::SETTING_MAP = {
     {SettingItem::DANMAKU_STYLE_AREA, {"danmaku_style_area", {"1/4", "1/2", "3/4", "1"}, {25, 50, 75, 100}, 3}},
     {SettingItem::DANMAKU_STYLE_ALPHA,
      {"danmaku_style_alpha",
-      {"10%", "25%", "50%", "60%", "70%", "80%", "90%", "100%"},
-      {10, 25, 50, 60, 70, 80, 90, 100},
-      5}},
+      {"10%", "20%", "30%", "40%", "50%", "60%", "70%", "80%", "90%", "100%"},
+      {10, 20, 30, 40, 50, 60, 70, 80, 90, 100},
+      7}},
     {SettingItem::DANMAKU_STYLE_FONTSIZE,
      {"danmaku_style_fontsize", {"50%", "75%", "100%", "125%", "150%", "175%"}, {15, 22, 30, 37, 45, 50}, 2}},
     {SettingItem::DANMAKU_STYLE_LINE_HEIGHT,
@@ -211,6 +219,12 @@ std::unordered_map<SettingItem, ProgramOption> ProgramConfig::SETTING_MAP = {
     {SettingItem::PLAYER_SATURATION, {"player_saturation", {}, {}, 0}},
     {SettingItem::PLAYER_HUE, {"player_hue", {}, {}, 0}},
     {SettingItem::PLAYER_GAMMA, {"player_gamma", {}, {}, 0}},
+    {SettingItem::MINIMUM_WINDOW_WIDTH, {"minimum_window_width", {"480"}, {480}, 0}},
+    {SettingItem::MINIMUM_WINDOW_HEIGHT, {"minimum_window_height", {"270"}, {270}, 0}},
+    {SettingItem::ON_TOP_WINDOW_WIDTH, {"on_top_window_width", {"480"}, {480}, 0}},
+    {SettingItem::ON_TOP_WINDOW_HEIGHT, {"on_top_window_height", {"270"}, {270}, 0}},
+    {SettingItem::ON_TOP_MODE, {"on_top_mode", {"off", "always", "auto"}, {0, 1, 2}, 0}},
+    {SettingItem::SCROLL_SPEED, {"scroll_speed", {}, {}, 0}},
 };
 
 ProgramConfig::ProgramConfig() = default;
@@ -233,11 +247,6 @@ void ProgramConfig::setProgramConfig(const ProgramConfig& conf) {
     this->refreshToken  = conf.refreshToken;
     this->searchHistory = conf.searchHistory;
     this->seasonCustom  = conf.seasonCustom;
-    brls::Logger::info("client: {}/{}", conf.client, conf.device);
-    for (const auto& c : conf.cookie) {
-        brls::Logger::info("cookie: {}:{}", c.first, c.second);
-    }
-    brls::Logger::info("refreshToken: {}", conf.refreshToken);
     brls::Logger::info("setting: {}", conf.setting.dump());
 }
 
@@ -346,6 +355,11 @@ void ProgramConfig::loadHomeWindowState() {
     sscanf(homeWindowStateData.c_str(), "%d,%ux%u,%dx%d", &monitor, &hWidth, &hHeight, &hXPos, &hYPos);
 
     if (hWidth == 0 || hHeight == 0) return;
+
+    int minWidth  = getIntOption(SettingItem::MINIMUM_WINDOW_WIDTH);
+    int minHeight = getIntOption(SettingItem::MINIMUM_WINDOW_HEIGHT);
+    if (hWidth < minWidth) hWidth = minWidth;
+    if (hHeight < minHeight) hHeight = minHeight;
 
     VideoContext::sizeH        = hHeight;
     VideoContext::sizeW        = hWidth;
@@ -546,6 +560,15 @@ void ProgramConfig::load() {
     // 是否使用低质量解码
     MPVCore::LOW_QUALITY = getBoolOption(SettingItem::PLAYER_LOW_QUALITY);
 
+    // 初始化滑动速度
+#ifdef _WIN32
+    int scrollSpeed = getSettingItem(SettingItem::SCROLL_SPEED, 150);
+#else
+    int scrollSpeed = getSettingItem(SettingItem::SCROLL_SPEED, 100);
+#endif
+    brls::PanGestureRecognizer::panFactor = scrollSpeed * 0.01f;
+
+
     // 初始化i18n
     std::set<std::string> i18nData{
         brls::LOCALE_AUTO,    brls::LOCALE_EN_US,   brls::LOCALE_JA, brls::LOCALE_RYU,
@@ -584,7 +607,9 @@ void ProgramConfig::load() {
     brls::Application::getWindowCreationDoneEvent()->subscribe([this]() {
         // 初始化弹幕字体
         std::string danmakuFont = getConfigDir() + "/danmaku.ttf";
-        if (access(danmakuFont.c_str(), F_OK) != -1 && brls::Application::loadFontFromFile("danmaku", danmakuFont)) {
+        // 只在应用模式下加载自定义字体 减少switch上的内存占用
+        if (brls::Application::getPlatform()->isApplicationMode() && access(danmakuFont.c_str(), F_OK) != -1 &&
+            brls::Application::loadFontFromFile("danmaku", danmakuFont)) {
             // 自定义弹幕字体
             int danmakuFontId = brls::Application::getFont("danmaku");
             nvgAddFallbackFontId(brls::Application::getNVGContext(), danmakuFontId,
@@ -616,7 +641,10 @@ void ProgramConfig::load() {
         // 设置窗口最小尺寸
 #ifdef IOS
 #elif defined(__APPLE__) || defined(__linux__) || defined(_WIN32)
-        brls::Application::getPlatform()->setWindowSizeLimits(MINIMUM_WINDOW_WIDTH, MINIMUM_WINDOW_HEIGHT, 0, 0);
+        int minWidth  = getIntOption(SettingItem::MINIMUM_WINDOW_WIDTH);
+        int minHeight = getIntOption(SettingItem::MINIMUM_WINDOW_HEIGHT);
+        brls::Application::getPlatform()->setWindowSizeLimits(minWidth, minHeight, 0, 0);
+        checkOnTop();
 #endif
     });
 
@@ -693,7 +721,7 @@ void ProgramConfig::save() {
     const std::string path = this->getConfigDir() + "/wiliwili_config.json";
     // fs is defined in cpr/cpr.h
 #ifndef IOS
-    fs::create_directories(this->getConfigDir());
+    cpr::fs::create_directories(this->getConfigDir());
 #endif
     nlohmann::json content(*this);
     std::ofstream writeFile(path);
@@ -706,13 +734,48 @@ void ProgramConfig::save() {
     brls::Logger::info("Write config to: {}", path);
 }
 
+void ProgramConfig::checkOnTop() {
+    switch (getIntOption(SettingItem::ON_TOP_MODE)) {
+        case 0:
+            // 关闭
+            brls::Application::getPlatform()->setWindowAlwaysOnTop(false);
+            return;
+        case 1:
+            // 开启
+            brls::Application::getPlatform()->setWindowAlwaysOnTop(true);
+            return;
+        case 2: {
+            // 自动模式，根据窗口大小判断是否需要切换到置顶模式
+            double factor = brls::Application::getPlatform()->getVideoContext()->getScaleFactor();
+            int minWidth =
+                ProgramConfig::instance().getIntOption(SettingItem::ON_TOP_WINDOW_WIDTH) * factor + 0.1;
+            int minHeight =
+                ProgramConfig::instance().getIntOption(SettingItem::ON_TOP_WINDOW_HEIGHT) * factor + 0.1;
+            bool onTop = brls::Application::windowWidth <= minWidth || brls::Application::windowHeight <= minHeight;
+            brls::Application::getPlatform()->setWindowAlwaysOnTop(onTop);
+            break;
+        }
+        default:
+            break;
+    }
+}
+
 void ProgramConfig::init() {
     brls::Logger::info("wiliwili {}", APPVersion::instance().git_tag);
+    wiliwili::initCrashDump();
+
+    // 在窗口大小改变时检查是否需要切换到置顶模式
+    brls::Application::getWindowSizeChangedEvent()->subscribe([]() { ProgramConfig::instance().checkOnTop(); });
 
     // Set min_threads and max_threads of http thread pool
     curl_global_init(CURL_GLOBAL_DEFAULT);
     cpr::async::startup(THREAD_POOL_MIN_THREAD_NUM, THREAD_POOL_MAX_THREAD_NUM, std::chrono::milliseconds(5000));
 
+#ifdef _WIN32
+    WSADATA wsaData;
+    int result = WSAStartup(MAKEWORD(2, 2), &wsaData);
+    if (result != 0) brls::Logger::error("WSAStartup failed with error: {}", result);
+#endif
 #if defined(_MSC_VER)
 #elif defined(__PSV__)
 #elif defined(PS4)
@@ -768,10 +831,6 @@ void ProgramConfig::init() {
         diskCookie,
         [](const Cookie& newCookie, const std::string& token) {
             brls::Logger::info("======== write cookies to disk");
-            for (const auto& c : newCookie) {
-                brls::Logger::info("cookie: {}:{}", c.first, c.second);
-            }
-            brls::Logger::info("refreshToken: {}", token);
             ProgramConfig::instance().setCookie(newCookie);
             ProgramConfig::instance().setRefreshToken(token);
             // 用户登录后，将默认清晰度设置为 1080P 60FPS
@@ -843,6 +902,9 @@ void ProgramConfig::exit(char* argv[]) {
     cpr::async::cleanup();
     curl_global_cleanup();
 
+#ifdef _WIN32
+    WSACleanup();
+#endif
 #ifdef IOS
 #elif defined(PS4)
 #elif __PSV__
@@ -868,17 +930,17 @@ void ProgramConfig::exit(char* argv[]) {
 void ProgramConfig::loadCustomThemes() {
     customThemes.clear();
     std::string directoryPath = getConfigDir() + "/theme";
-    if (!fs::exists(directoryPath)) return;
+    if (!cpr::fs::exists(directoryPath)) return;
 
-    for (const auto& entry : fs::directory_iterator(getConfigDir() + "/theme")) {
+    for (const auto& entry : cpr::fs::directory_iterator(getConfigDir() + "/theme")) {
 #if USE_BOOST_FILESYSTEM
-        if (!fs::is_directory(entry)) continue;
+        if (!cpr::fs::is_directory(entry)) continue;
 #else
         if (!entry.is_directory()) continue;
 #endif
         std::string subDirectory = entry.path().string();
         std::string jsonFilePath = subDirectory + "/resources_meta.json";
-        if (!fs::exists(jsonFilePath)) continue;
+        if (!cpr::fs::exists(jsonFilePath)) continue;
 
         std::ifstream readFile(jsonFilePath);
         if (readFile) {
@@ -940,4 +1002,12 @@ void ProgramConfig::addSeasonCustomSetting(unsigned int key, const SeasonCustomI
 void ProgramConfig::setSeasonCustomSetting(const SeasonCustomSetting& value) {
     this->seasonCustom = value;
     this->save();
+}
+
+void ProgramConfig::toggleFullscreen() {
+    bool value = !getBoolOption(SettingItem::FULLSCREEN);
+    setSettingItem(SettingItem::FULLSCREEN, value);
+    VideoContext::FULLSCREEN = value;
+    brls::Application::getPlatform()->getVideoContext()->fullScreen(value);
+    GA("player_setting", {{"fullscreen", value ? "true" : "false"}});
 }
